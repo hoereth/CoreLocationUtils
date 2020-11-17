@@ -1,3 +1,7 @@
-# CoreLocationUtils
+# 📍 CoreLocationUtils
 
-A description of this package.
+Just a few but helpful classes for handling locations with CoreLocation.
+
+## OneTimeLocation.swift
+
+Allows you to query a CLLocation without managing CLLocationManager or any of its delegates.
