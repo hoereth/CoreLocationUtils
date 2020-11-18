@@ -5,29 +5,40 @@ public class OneTimeLocation : NSObject, CLLocationManagerDelegate {
     public enum LocationError : Error {
         case denied
         case restricted
+        case timeout
         case unknown
     }
     
     let manager: CLLocationManager
     let completion: (Result<CLLocation, Error>)->()
+    let timeout: TimeInterval
 
     fileprivate static let instancesQueue = DispatchQueue(label: "OneTimeLocation.instances")
     fileprivate static var instances = Set<OneTimeLocation>()
     
+    /// Will either find you the current location or produce an error.
+    /// - Parameters:
+    ///   - desiredAccuracy: see CLLocationManager.desiredAccuracy
+    ///   - timeout: Applies to actual finding a location. Dialogs are presented without timeout.
     public static func queryLocation(desiredAccuracy: CLLocationAccuracy, timeout: TimeInterval, completion: @escaping (Result<CLLocation, Error>)->()) {
-        let oneTimeLocation = OneTimeLocation(desiredAccuracy: desiredAccuracy, completion: completion)
+        let oneTimeLocation = OneTimeLocation(desiredAccuracy: desiredAccuracy, completion: completion, timeout: timeout)
         oneTimeLocation.manager.delegate = oneTimeLocation
         
         switch CLLocationManager.authorizationStatus() {
         case .authorizedAlways, .authorizedWhenInUse:
             instancesQueue.sync {
-                oneTimeLocation.manager.startUpdatingLocation()
                 _ = instances.insert(oneTimeLocation)
+                oneTimeLocation.manager.startUpdatingLocation()
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+                    oneTimeLocation.manager.stopUpdatingLocation()
+                    completion(Result.failure(LocationError.timeout))
+                    oneTimeLocation.removeInstance()
+                }
             }
         case .notDetermined:
             instancesQueue.sync {
-                oneTimeLocation.manager.requestWhenInUseAuthorization()
                 _ = instances.insert(oneTimeLocation)
+                oneTimeLocation.manager.requestWhenInUseAuthorization()
             }
         case .denied:
             completion(Result.failure(LocationError.denied))
@@ -38,10 +49,11 @@ public class OneTimeLocation : NSObject, CLLocationManagerDelegate {
         }
     }
     
-    fileprivate init(desiredAccuracy: CLLocationAccuracy, completion: @escaping (Result<CLLocation, Error>)->()) {
+    fileprivate init(desiredAccuracy: CLLocationAccuracy, completion: @escaping (Result<CLLocation, Error>)->(), timeout: TimeInterval) {
         self.manager = CLLocationManager()
         self.manager.desiredAccuracy = desiredAccuracy
         self.completion = completion
+        self.timeout = timeout
     }
     
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -51,17 +63,13 @@ public class OneTimeLocation : NSObject, CLLocationManagerDelegate {
             self.completion(Result.failure(LocationError.unknown))
         }
         self.manager.stopUpdatingLocation()
-        Self.instancesQueue.sync {
-            _ = OneTimeLocation.instances.remove(self)
-        }
+        self.removeInstance()
     }
     
     public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         self.completion(Result.failure(error))
         self.manager.stopUpdatingLocation()
-        Self.instancesQueue.sync {
-            _ = OneTimeLocation.instances.remove(self)
-        }
+        self.removeInstance()
     }
     
     public func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
@@ -69,23 +77,28 @@ public class OneTimeLocation : NSObject, CLLocationManagerDelegate {
         switch CLLocationManager.authorizationStatus() {
         case .authorizedAlways, .authorizedWhenInUse:
             self.manager.startUpdatingLocation()
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+                self.manager.stopUpdatingLocation()
+                self.completion(Result.failure(LocationError.timeout))
+                self.removeInstance()
+            }
         case .notDetermined:
             break;
         case .denied:
             completion(Result.failure(LocationError.denied))
-            Self.instancesQueue.sync {
-                _ = OneTimeLocation.instances.remove(self)
-            }
+            self.removeInstance()
         case .restricted:
             completion(Result.failure(LocationError.restricted))
-            Self.instancesQueue.sync {
-                _ = OneTimeLocation.instances.remove(self)
-            }
+            self.removeInstance()
         @unknown default:
             completion(Result.failure(LocationError.unknown))
-            Self.instancesQueue.sync {
-                _ = OneTimeLocation.instances.remove(self)
-            }
+            self.removeInstance()
+        }
+    }
+    
+    fileprivate func removeInstance() {
+        Self.instancesQueue.sync {
+            _ = OneTimeLocation.instances.remove(self)
         }
     }
 }
