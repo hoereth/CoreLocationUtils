@@ -31,8 +31,9 @@ public class OneTimeLocation : NSObject, CLLocationManagerDelegate {
                 oneTimeLocation.manager.startUpdatingLocation()
                 DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
                     oneTimeLocation.manager.stopUpdatingLocation()
-                    completion(Result.failure(LocationError.timeout))
-                    oneTimeLocation.removeInstance()
+                    if oneTimeLocation.removeInstance() != nil {
+                        completion(Result.failure(LocationError.timeout))
+                    }
                 }
             }
         case .notDetermined:
@@ -63,13 +64,13 @@ public class OneTimeLocation : NSObject, CLLocationManagerDelegate {
             self.completion(Result.failure(LocationError.unknown))
         }
         self.manager.stopUpdatingLocation()
-        self.removeInstance()
+        _ = self.removeInstance()
     }
     
     public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         self.completion(Result.failure(error))
         self.manager.stopUpdatingLocation()
-        self.removeInstance()
+        _ = self.removeInstance()
     }
     
     public func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
@@ -79,26 +80,27 @@ public class OneTimeLocation : NSObject, CLLocationManagerDelegate {
             self.manager.startUpdatingLocation()
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
                 self.manager.stopUpdatingLocation()
-                self.completion(Result.failure(LocationError.timeout))
-                self.removeInstance()
+                if self.removeInstance() != nil {
+                    self.completion(Result.failure(LocationError.timeout))
+                }
             }
         case .notDetermined:
             break;
         case .denied:
             completion(Result.failure(LocationError.denied))
-            self.removeInstance()
+            _ = self.removeInstance()
         case .restricted:
             completion(Result.failure(LocationError.restricted))
-            self.removeInstance()
+            _ = self.removeInstance()
         @unknown default:
             completion(Result.failure(LocationError.unknown))
-            self.removeInstance()
+            _ = self.removeInstance()
         }
     }
     
-    fileprivate func removeInstance() {
+    fileprivate func removeInstance() -> OneTimeLocation? {
         Self.instancesQueue.sync {
-            _ = OneTimeLocation.instances.remove(self)
+            OneTimeLocation.instances.remove(self)
         }
     }
 }
