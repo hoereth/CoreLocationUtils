@@ -50,6 +50,19 @@ public class OneTimeLocation : NSObject, CLLocationManagerDelegate {
         }
     }
     
+    @available(iOS 15.0.0, *)
+    public static func queryLocation(desiredAccuracy: CLLocationAccuracy, timeout: TimeInterval) async throws -> CLLocation {
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CLLocation, Error>) -> Void in
+            Self.queryLocation(desiredAccuracy: desiredAccuracy, timeout: timeout) { (result) in
+                do {
+                    continuation.resume(returning: try result.get())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+    
     fileprivate init(desiredAccuracy: CLLocationAccuracy, completion: @escaping (Result<CLLocation, Error>)->(), timeout: TimeInterval) {
         self.manager = CLLocationManager()
         self.manager.desiredAccuracy = desiredAccuracy
